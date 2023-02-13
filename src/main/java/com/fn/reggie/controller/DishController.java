@@ -12,15 +12,15 @@ import com.fn.reggie.service.CategoryService;
 import com.fn.reggie.service.DishFlavorService;
 import com.fn.reggie.service.DishService;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.ibatis.annotations.Delete;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Bean;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @RestController
@@ -35,6 +35,9 @@ public class DishController {
 
     @Autowired
     private CategoryService categoryService;
+
+    @Autowired
+    private RedisTemplate redisTemplate;
 
     /**
      * 菜品管理中的分页查询，需要查询到多张表
@@ -94,6 +97,14 @@ public class DishController {
     @PostMapping
     public Result<String> save(@RequestBody DishDto dishDto) {
         dishService.saveWithFlavor(dishDto);
+
+        //新增菜品后要清空对应的Redis数据
+        //1. 先获取更新了哪个分类下的菜品，并构造key
+        Long categoryId = dishDto.getCategoryId();
+        String key = "dish_" + dishDto.getCategoryId() + "_" + dishDto.getStatus();
+        //2. 清理对应的Redis缓存
+        redisTemplate.delete(key);
+
         return Result.success("新增菜品成功");
     }
 
@@ -118,6 +129,14 @@ public class DishController {
     @PutMapping
     public Result<String> update(@RequestBody DishDto dishDto) {
         dishService.updateWithFlavor(dishDto);
+
+        //更新菜品后要清空对应的Redis数据
+        //1. 先获取更新了哪个分类下的菜品，并构造key
+        Long categoryId = dishDto.getCategoryId();
+        String key = "dish_" + dishDto.getCategoryId() + "_" + dishDto.getStatus();
+        //2. 清理对应的Redis缓存
+        redisTemplate.delete(key);
+
         return Result.success("修改菜品成功");
     }
 
@@ -174,7 +193,21 @@ public class DishController {
     public Result<String> delete(Long[] ids) {
         //Long数组转为集合，再一起删除
         List<Long> delList = new ArrayList<>(Arrays.asList(ids));
+
+        //删除菜品后要清空对应的Redis数据
+        //1. 先根据菜品id获取所在categoryIds，并构造keys
+        List<String> categoryLists = new ArrayList<>();
+        for (Long aLong : delList) {
+            Dish dish = dishService.getById(aLong);
+            String key = "dish_" + dish.getCategoryId() + "_" + dish.getStatus();
+            categoryLists.add(key);
+        }
+
+        //删除数据库对应的菜品
         dishService.removeByIds(delList);
+        //2. 清理对应的Redis缓存
+        redisTemplate.delete(categoryLists);
+
         return Result.success("删除成功");
     }
 
@@ -194,9 +227,22 @@ public class DishController {
 //        List<Dish> dishList = dishService.list(wrapper);
 //        return Result.success(dishList);
 //    }
-    //代码改造，新增返回口味数据
+    //代码改造1.0，新增返回口味数据
     @GetMapping("/list")
     public Result<List<DishDto>> list(Dish dish) {
+        List<DishDto> dishDtoList = null;
+        //动态生成Redis的key
+        String key = "dish_" + dish.getCategoryId() + "_" + dish.getStatus();
+        //改造2.0，加入Redis缓存菜品
+        //从Redis获取菜品数据,直接用Redis的String存储
+        //对象通过JSON序列化成字符串在序列化成字节数组存入redis，取的时候拿到字节数组反序列即可(@ResponseBody)
+        dishDtoList = (List<DishDto>) redisTemplate.opsForValue().get(key);
+
+        //1. 如果有，直接返回
+        if (dishDtoList != null) {
+            return Result.success(dishDtoList);
+        }
+
         LambdaQueryWrapper<Dish> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Dish::getCategoryId, dish.getCategoryId());
         //并且该菜品status状态为1，起售才展示
@@ -204,7 +250,7 @@ public class DishController {
         wrapper.orderByAsc(Dish::getSort).orderByDesc(Dish::getUpdateTime);
         List<Dish> dishList = dishService.list(wrapper);
 
-        List<DishDto> dishDtoList = dishList.stream().map(item -> {
+        dishDtoList = dishList.stream().map(item -> {
             DishDto dishDto = new DishDto();
 
             BeanUtils.copyProperties(item, dishDto);
@@ -224,6 +270,9 @@ public class DishController {
 
             return dishDto;
         }).collect(Collectors.toList());
+
+        //2. Redis没有数据，再进行查询数据库，然后将查询的菜品数据放入Redis，存活时间60分钟
+        redisTemplate.opsForValue().set(key, dishDtoList, 60, TimeUnit.MINUTES);
 
         return Result.success(dishDtoList);
     }

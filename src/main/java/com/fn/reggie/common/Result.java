@@ -2,15 +2,19 @@ package com.fn.reggie.common;
 
 import lombok.Data;
 
+import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
  * 通用返回结果，将数据封装好后返回给网页
+ *
  * @param <T>
  */
 @Data
-public class Result<T> {
+public class Result<T> implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private Integer code;   //编码，1成功，0和其他数字失败
     private T data;    //数据
     private String msg; //错误信息

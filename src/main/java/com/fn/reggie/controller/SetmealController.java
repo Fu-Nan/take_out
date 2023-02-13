@@ -14,6 +14,10 @@ import com.fn.reggie.service.SetmealService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -79,6 +83,9 @@ public class SetmealController {
      * @param setmealDto
      * @return
      */
+    //将该value下所有key全删除
+    @CacheEvict(value = "setmealCache", allEntries = true)
+//    @CachePut(value = "setmealCache", key = "#setmealDto.id") //Put不适用
     @PostMapping
     public Result<String> save(@RequestBody SetmealDto setmealDto) {
         setmealService.saveWithDish(setmealDto);
@@ -91,6 +98,8 @@ public class SetmealController {
      * @param id
      * @return
      */
+    //unless，满足条件就不缓存
+    @Cacheable(value = "setmealCache", key = "#id", unless = "#result == null ")
     @GetMapping("/{id}")
     public Result<Setmeal> getById(@PathVariable Long id) {
         SetmealDto setmealDto = setmealService.getWithDish(id);
@@ -103,6 +112,7 @@ public class SetmealController {
      * @param setmealDto
      * @return
      */
+    @CacheEvict(value = "setmealCache", key = "#setmealDto.id")
     @PutMapping
     public Result<String> update(@RequestBody SetmealDto setmealDto) {
         setmealService.updateWithDish(setmealDto);
@@ -115,6 +125,8 @@ public class SetmealController {
      * @param ids
      * @return
      */
+    //将该value下所有key全删除
+    @CacheEvict(value = "setmealCache", allEntries = true)
     @DeleteMapping
     public Result<String> delete(@RequestParam List<Long> ids) {
         setmealService.removeWithDish(ids);
@@ -165,6 +177,7 @@ public class SetmealController {
      * @param setmeal
      * @return
      */
+    @Cacheable(value = "setmealCache", key = "#setmeal.categoryId+'_'+#setmeal.status")
     @GetMapping("/list")
     public Result<List<SetmealDto>> list(Setmeal setmeal) {
         //setmealList
