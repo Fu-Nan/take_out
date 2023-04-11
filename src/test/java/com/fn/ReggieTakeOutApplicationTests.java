@@ -9,11 +9,6 @@ import org.springframework.data.redis.connection.StringRedisConnection;
 import org.springframework.data.redis.core.*;
 import org.springframework.test.context.junit4.SpringRunner;
 
-import javax.annotation.Resource;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-
 @SpringBootTest(classes = TakeOutApplication.class)
 public class ReggieTakeOutApplicationTests {
 }
